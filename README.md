@@ -10,7 +10,16 @@
   - [Installing Addons](https://kubernetes.io/docs/concepts/cluster-administration/addons)
   - [CNI Benchmark](https://itnext.io/benchmark-results-of-kubernetes-network-plugins-cni-over-10gbit-s-network-updated-august-2020-6e1b757b9e49)
   - Calico: [Quickstart](https://docs.projectcalico.org/getting-started/kubernetes/quickstart)
+- PDF: [Comparing container image building tools](https://events19.linuxfoundation.org/wp-content/uploads/2017/11/Comparing-Next-Generation-Container-Image-Building-Tools-OSS-Akihiro-Suda.pdf)
+- [Container Tools Guide](https://github.com/containers/buildah/tree/master/docs/containertools): Buildah, CRI-O, Podman, Skopeo
+  - [Podman](https://podman.io/)
+    - [GitHub](https://github.com/containers/podman)
+    - [Tutorial](https://github.com/containers/podman/blob/master/docs/tutorials/podman_tutorial.md)
+  - [Buildah](https://buildah.io/)
+    - [GitHub](https://github.com/containers/buildah)
 - [kaniko](https://github.com/GoogleContainerTools/kaniko): Build Container Images In Kubernetes
+  - [Getting Started Tutorial](https://github.com/GoogleContainerTools/kaniko/blob/master/docs/tutorial.md)
+  - [Running kaniko in a Kubernetes cluster](https://github.com/GoogleContainerTools/kaniko#running-kaniko-in-a-kubernetes-cluster)
   - [Introducing kaniko](https://cloud.google.com/blog/products/gcp/introducing-kaniko-build-container-images-in-kubernetes-and-google-container-builder-even-without-root-access)
 - [microk8s](https://microk8s.io/)
   - [Docs](https://microk8s.io/docs)
@@ -223,16 +232,70 @@ ubuntu-focal   Ready    master   15m   v1.19.4   10.0.2.15     <none>        Ubu
 
 ## Container Images
 
+### Docker Registry Secret
+
+[Create a Secret by providing credentials on the command line](https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/#create-a-secret-by-providing-credentials-on-the-command-line)
+
+```bash
+kubectl create secret docker-registry regcred \
+--docker-server=<your-registry-server> \ # Private Docker Registry FQDN. DockerHub: https://index.docker.io/v1/
+--docker-username=<your-name> \
+--docker-password=<your-pword> \
+--docker-email=<your-email>
+```
+
+```bash
+kubectl get secret regcred --output="jsonpath={.data.\.dockerconfigjson}" | base64 --decode
+```
+
+### Start Kaniko
+
+Node.js App Dockerfile: `/k8s/app/Dockerfile`
+
+```bash
+KANIKO_PATH="/k8s/app"
+DOCKERHUB_REPO="<user-name>/<repo>"
+```
+
+Run kaniko:
+
+```bash
+cat /k8s/kaniko/volume.yaml | sed "s#{{path}}#$KANIKO_PATH#g" | kubectl apply -f -
+kubectl apply -f /k8s/kaniko/volume-claim.yaml
+cat /k8s/kaniko/pod.yaml | sed "s#{{repo}}#$DOCKERHUB_REPO#g" | kubectl apply -f -
+```
+
+Check whether the build complete and show the build logs:
+
+```bash
+kubectl logs kaniko -f
+```
+
+```bash
+kubectl get pods
+
+NAME     READY   STATUS      RESTARTS   AGE
+kaniko   0/1     Completed   0          42s
+```
+
+Go to: `https://hub.docker.com/repository/docker/<user-name>/<repo>`
+
+
 ---
 
 ## Deploy a service
 
-### Build & push a container image
-
-### Apply a service
-
 ```bash
 kubectl apply -f /k8s/nginx/configmap.yaml -f /k8s/deployment.yaml
+```
+
+Check:
+
+```bash
+kubectl get pods
+
+NAME                     READY   STATUS      RESTARTS   AGE
+hello-8595777499-6np5n   2/2     Running     0          30s
 ```
 
 ---
@@ -240,6 +303,8 @@ kubectl apply -f /k8s/nginx/configmap.yaml -f /k8s/deployment.yaml
 ## Test
 
 On the host machine: [http://192.168.33.100:30080](http://192.168.33.100:30080)
+
+![](hello.png)
 
 ## Delete a service
 

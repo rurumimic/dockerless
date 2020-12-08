@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: app:latest
+          image: rurumimic/hellothere:latest
           ports:
           - containerPort: 3000
         - name: nginx
