@@ -339,79 +339,10 @@ sudo snap install helm --classic
 kubectl create namespace jenkins
 ```
 
-### (Option) Add CA certs
-
-- [Using `-Djavax.net.ssl.trustStore`](https://stackoverflow.com/a/47316409/12722009)
-- plugin: [skip-certificate-check](https://plugins.jenkins.io/skip-certificate-check/): `/k8s/jenkins/plugins`
-
-#### Certs file to a configmap
-
-```bash
-kubectl create configmap -n jenkins self-certs \
---from-file=/vagrant/ca-trust/enterprise.crt.sample \
---from-file=/vagrant/ca-trust/1.crt
-```
-
-Check your configmap:
-
-```bash
-kubectl describe cm -n jenkins self-certs
-```
-
-#### Mount ConfigMap
-
-Edit [/k8s/jenkins/deployment-with-crt.yaml](k8s/jenkins/deployment-with-crt.yaml).  
-
-**Steps:**
-
-1. init container:
-   1. Mount empty volume(`java-security`) to  `/security` and certs files(`self-certs`) to `/cert`.
-   1. Copy `$JAVA_HOME/jre/lib/security/*` to `/security`.
-   1. Add certs to Java Keystore(`/security/cacerts`).
-1. jenkins container:
-   1. Mount `java-security` to `/security` and `jenkins-home` to `/var/jenkins_home`.
-
-```yaml
-spec:
-  initContainers:
-  - name: init
-    image: jenkins/jenkins:lts-alpine
-    command: ["/bin/bash", "-c"]
-    args:
-    - >-
-        cp -r $JAVA_HOME/jre/lib/security/* /security &&
-        keytool -importcert -keystore /security/cacerts -alias "self-certs" -storepass changeit -trustcacerts -noprompt -file "/certs/1.crt"
-    volumeMounts:
-    - name: java-security
-      mountPath: /security
-    - name: self-certs
-      mountPath: /certs
-  containers:
-  - name: jenkins
-    image: jenkins/jenkins:lts-alpine
-    ports:
-    - containerPort: 8080
-    volumeMounts:
-    - name: jenkins-home
-      mountPath: /var/jenkins_home
-    - name: java-security
-      mountPath:  /opt/java/openjdk/jre/lib/security
-  volumes:
-    - name: jenkins-home
-      emptyDir: {}
-    - name: java-security
-      emptyDir: {}
-    - name: self-certs
-      configMap:
-        name: self-certs
-```
-
 ### Deploy Jenkins
 
 ```bash
 kubectl apply -f /k8s/jenkins/deployment.yaml
-# or If you use self-certs:
-# kubectl apply -f /k8s/jenkins/deployment-with-crt.yaml
 ```
 
 ### Get Jenkins credentials
@@ -428,13 +359,10 @@ kubectl exec -n jenkins $(kubectl get pods -n jenkins -l app=jenkins --no-header
 [http://192.168.33.100:32080](http://192.168.33.100:32080)
 
 1. Unlocking Jenkins
-1. Install suggested plugins: *If you deployed `deployment-with-crt.yaml`, Select plugins to install → unselect all*
+1. Install suggested plugins
 1. Create first admin user: `admin`
 1. Instance configuration
    - Jenkins URL: `http://192.168.33.100:32080/`
-1. *If you deployed `deployment-with-crt.yaml`, go to [http://192.168.33.100:32080/pluginManager/advanced](http://192.168.33.100:32080/pluginManager/advanced)*
-   <!-- 1. *Upload `skip-certificate-check.hpi` in `<project-directory>/jenkins-plugins`.* -->
-   1. Set update url: `http://updates.jenkins.io/update-center.json`
 
 ### Plugins
 
@@ -442,7 +370,11 @@ kubectl exec -n jenkins $(kubectl get pods -n jenkins -l app=jenkins --no-header
 1. Search `kubernetes`.
 1. Install `Kubernetes` plugin and restart Jenkins.
 
+### Create a Pipeline
+
 ### Commit
+
+### Test
 
 ---
 
