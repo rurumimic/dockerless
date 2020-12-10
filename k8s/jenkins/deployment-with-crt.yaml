@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jenkins
+  namespace: jenkins
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jenkins
+  template:
+    metadata:
+      labels:
+        app: jenkins
+    spec:
+      initContainers:
+      - name: init
+        image: jenkins/jenkins:lts-alpine
+        command: ["/bin/bash", "-c"]
+        args:
+        - >-
+            cp -r $JAVA_HOME/jre/lib/security/* /security &&
+            keytool -importcert -keystore /security/cacerts -alias "self-certs" -storepass changeit -trustcacerts -noprompt -file "/certs/1.crt"
+        volumeMounts:
+        - name: java-security
+          mountPath: /security
+        - name: self-certs
+          mountPath: /certs
+      containers:
+      - name: jenkins
+        image: jenkins/jenkins:lts-alpine
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: jenkins-home
+          mountPath: /var/jenkins_home
+        - name: java-security
+          mountPath:  /opt/java/openjdk/jre/lib/security
+      volumes:
+        - name: jenkins-home
+          emptyDir: {}
+        - name: java-security
+          emptyDir: {}
+        - name: self-certs
+          configMap:
+            name: self-certs
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jenkins
+  namespace: jenkins
+spec:
+  type: NodePort
+  selector:
+    app: jenkins
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 32080
