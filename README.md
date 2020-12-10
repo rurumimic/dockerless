@@ -35,11 +35,7 @@
       - [How to install Jenkins Operator](https://jenkinsci.github.io/kubernetes-operator/docs/installation/)
   - Plugins
     - [Blue Ocean](https://www.jenkins.io/doc/book/blueocean/)
-    - [Kubernetes plugin for Jenkins](https://plugins.jenkins.io/kubernetes/)
-      - [jenkinsci/kubernetes-plugin](https://github.com/jenkinsci/kubernetes-plugin)
-      - [jenkinsci/kubernetes-pipeline-plugin](https://github.com/jenkinsci/kubernetes-pipeline-plugin)
-      - [jenkinsci/kubernetes-credentials-plugin](https://github.com/jenkinsci/kubernetes-credentials-plugin)
-      - [jenkinsci/kubernetes-cd-plugin](https://github.com/jenkinsci/kubernetes-cd-plugin)
+    - [Kubernetes plugin for Jenkins](https://github.com/jenkinsci/kubernetes-plugin)
 
 ---
 
@@ -323,10 +319,85 @@ kubectl delete -f /k8s/nginx/configmap.yaml -f /k8s/deployment.yaml
 
 ---
 
-## Helm
+## Git server
+
+[jkarlosb/git-server-docker](https://github.com/jkarlosb/git-server-docker): A lightweight Git Server Docker image built with Alpine Linux.
+
+### Generate a pair keys
 
 ```bash
-sudo snap install helm --classic
+ssh-keygen -t rsa
+# enter all
+```
+
+```bash
+ls -1 $HOME/.ssh/id_*
+
+/home/vagrant/.ssh/id_rsa
+/home/vagrant/.ssh/id_rsa.pub
+```
+
+### Create a directory for git server volume
+
+```bash
+mkdir -p $HOME/git/repos $HOME/git/keys
+```
+
+### Deploy git server
+
+```bash
+kubectl apply -f /k8s/git/deployment.yaml
+```
+
+### Create a new repo
+
+#### Copy a node.js project
+
+```bash
+mkdir $HOME/workspace
+cp -r /k8s/app $HOME/workspace/app
+```
+
+#### Init a git repository
+
+```bash
+cd $HOME/workspace/app
+git init --shared=true
+git config --global user.email "you@example.com"
+git config --global user.name "Your Name"
+git add .
+git commit -m "first commit"
+```
+
+#### Create a bare repository
+
+```bash
+cd $HOME/workspace
+git clone --bare app app.git
+```
+
+#### Upload a repositroy
+
+```bash
+cp -r $HOME/workspace/app.git $HOME/git/repos
+```
+
+#### Upload a public key
+
+```bash
+cp $HOME/.ssh/id_rsa.pub $HOME/git/keys
+```
+
+#### Restart a pod
+
+```bash
+kubectl rollout restart deployment git
+```
+
+#### Test clone a repository
+
+```bash
+git clone ssh://git@localhost:32222/git-server/repos/app.git /tmp/app
 ```
 
 ---
@@ -359,14 +430,18 @@ kubectl exec -n jenkins $(kubectl get pods -n jenkins -l app=jenkins --no-header
 [http://192.168.33.100:32080](http://192.168.33.100:32080)
 
 1. Unlocking Jenkins
-1. Install suggested plugins
+1. Select plugins to install → `None`(Unselect all) → Install
 1. Create first admin user: `admin`
 1. Instance configuration
    - Jenkins URL: `http://192.168.33.100:32080/`
 
-### Plugins
+### (Skip) Install plugins
 
-1. Go to [http://192.168.33.100:32080/pluginManager](http://192.168.33.100:32080/pluginManager).
+[Installed plugin list](http://192.168.33.100:32080/pluginManager/installed): Already installed the Kubernetes plugin.
+
+How to install plugins:
+
+1. Go to [http://192.168.33.100:32080/pluginManager/available](http://192.168.33.100:32080/pluginManager/available).
 1. Search `kubernetes`.
 1. Install `Kubernetes` plugin and restart Jenkins.
 

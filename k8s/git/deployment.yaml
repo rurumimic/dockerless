@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: git
+  labels:
+    name: git
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: git
+  template:
+    metadata:
+      labels:
+        app: git
+    spec:
+      containers:
+        - name: git
+          image: jkarlos/git-server-docker
+          ports:
+          - containerPort: 22
+          volumeMounts:
+            - name: repos
+              mountPath: /git-server/repos
+            - name: keys
+              mountPath: /git-server/keys
+      volumes:
+        - name: repos
+          hostPath: 
+            path: /home/vagrant/git/repos
+        - name: keys
+          hostPath:
+            path: /home/vagrant/git/keys
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: git
+spec:
+  type: NodePort
+  selector:
+    app: git
+  ports:
+    - protocol: TCP
+      name: ssh
+      port: 2222
+      targetPort: 22
+      nodePort: 32222
