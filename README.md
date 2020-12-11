@@ -321,21 +321,7 @@ kubectl delete -f /k8s/nginx/configmap.yaml -f /k8s/deployment.yaml
 
 ## Git server
 
-[jkarlosb/git-server-docker](https://github.com/jkarlosb/git-server-docker): A lightweight Git Server Docker image built with Alpine Linux.
-
-### Generate a pair keys
-
-```bash
-ssh-keygen -t rsa
-# enter all
-```
-
-```bash
-ls -1 $HOME/.ssh/id_*
-
-/home/vagrant/.ssh/id_rsa
-/home/vagrant/.ssh/id_rsa.pub
-```
+[rurumimic/git-server-docker](https://github.com/rurumimic/git-server-docker): A lightweight Git Server Docker image built with Alpine Linux.
 
 ### Create a directory for git server volume
 
@@ -343,10 +329,31 @@ ls -1 $HOME/.ssh/id_*
 mkdir -p $HOME/git/repos $HOME/git/keys
 ```
 
-### Deploy git server
+### Generate a pair keys
 
 ```bash
-kubectl apply -f /k8s/git/deployment.yaml
+ssh-keygen -t ed25519 -C "your_email@example.com"
+# enter all
+```
+
+```bash
+ls -1 $HOME/.ssh/id_*
+
+/home/vagrant/.ssh/id_ed25519
+/home/vagrant/.ssh/id_ed25519.pub
+```
+
+SSH add:
+
+```bash
+eval $(ssh-agent)
+ssh-add ~/.ssh/id_ed25519
+```
+
+Copy keys:
+
+```bash
+cp $HOME/.ssh/id_ed25519.pub $HOME/git/keys
 ```
 
 ### Create a new repo
@@ -376,19 +383,21 @@ cd $HOME/workspace
 git clone --bare app app.git
 ```
 
-#### Upload a repositroy
+Copy repositories:
 
 ```bash
 cp -r $HOME/workspace/app.git $HOME/git/repos
 ```
 
-#### Upload a public key
+### Deploy git server
 
 ```bash
-cp $HOME/.ssh/id_rsa.pub $HOME/git/keys
+kubectl apply -f /k8s/git/deployment.yaml
 ```
 
 #### Restart a pod
+
+If you have added keys or repositories, restart the Pod:
 
 ```bash
 kubectl rollout restart deployment git
@@ -397,7 +406,7 @@ kubectl rollout restart deployment git
 #### Test clone a repository
 
 ```bash
-git clone ssh://git@localhost:32222/git-server/repos/app.git /tmp/app
+git clone ssh://git@127.0.0.1:32222/git/repos/app.git /tmp/app
 ```
 
 ---

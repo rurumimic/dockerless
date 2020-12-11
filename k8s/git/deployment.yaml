@@ -16,14 +16,14 @@ spec:
     spec:
       containers:
         - name: git
-          image: jkarlos/git-server-docker
+          image: rurumimic/test-git:latest
           ports:
           - containerPort: 22
           volumeMounts:
             - name: repos
-              mountPath: /git-server/repos
+              mountPath: /git/repos
             - name: keys
-              mountPath: /git-server/keys
+              mountPath: /git/keys
       volumes:
         - name: repos
           hostPath: 
