@@ -321,19 +321,30 @@ kubectl delete -f /k8s/nginx/configmap.yaml -f /k8s/deployment.yaml
 
 ## Git server
 
-[rurumimic/git-server-docker](https://github.com/rurumimic/git-server-docker): A lightweight Git Server Docker image built with Alpine Linux.
-
-### Create a directory for git server volume
+### Create git user
 
 ```bash
-mkdir -p $HOME/git/repos $HOME/git/keys
+sudo adduser --shell /usr/bin/git-shell --disabled-password --gecos "" git
+echo git:12345 | sudo chpasswd
+sudo -u git mkdir -m 700 /home/git/.ssh /home/git/repos /home/git/git-shell-commands
+```
+
+### Set git-shell-commands
+
+```bash
+cat <<EOF | sudo -u git tee /home/git/git-shell-commands/no-interactive-login
+#!/bin/sh
+printf '%s\n' "Hi! You've successfully authenticated, but I do not"
+printf '%s\n' "provide interactive shell access."
+exit 128
+EOF
+sudo chmod +x /home/git/git-shell-commands/no-interactive-login
 ```
 
 ### Generate a pair keys
 
 ```bash
-ssh-keygen -t ed25519 -C "your_email@example.com"
-# enter all
+ssh-keygen -t ed25519 -C "your_email@example.com" -f $HOME/.ssh/id_ed25519 -q -N ""
 ```
 
 ```bash
@@ -353,7 +364,7 @@ ssh-add ~/.ssh/id_ed25519
 Copy keys:
 
 ```bash
-cp $HOME/.ssh/id_ed25519.pub $HOME/git/keys
+cat $HOME/.ssh/id_ed25519.pub | sudo tee -a /home/git/.ssh/authorized_keys
 ```
 
 ### Create a new repo
@@ -383,30 +394,28 @@ cd $HOME/workspace
 git clone --bare app app.git
 ```
 
-Copy repositories:
+#### Copy repositories
 
 ```bash
-cp -r $HOME/workspace/app.git $HOME/git/repos
-```
-
-### Deploy git server
-
-```bash
-kubectl apply -f /k8s/git/deployment.yaml
-```
-
-#### Restart a pod
-
-If you have added keys or repositories, restart the Pod:
-
-```bash
-kubectl rollout restart deployment git
+sudo cp -r $HOME/workspace/app.git /home/git/repos
+sudo chown -R git:git /home/git/repos
+sudo chmod -R ug+rwX /home/git/repos
+sudo find /home/git/repos -type d -exec chmod g+s '{}' +
 ```
 
 #### Test clone a repository
 
 ```bash
-git clone ssh://git@127.0.0.1:32222/git/repos/app.git /tmp/app
+git clone ssh://git@192.168.33.100/~/repos/app.git /tmp/app
+```
+
+```bash
+Cloning into '/tmp/app'...
+remote: Enumerating objects: 8, done.
+remote: Counting objects: 100% (8/8), done.
+remote: Compressing objects: 100% (8/8), done.
+remote: Total 8 (delta 0), reused 0 (delta 0)
+Receiving objects: 100% (8/8), 7.39 KiB | 7.39 MiB/s, done.
 ```
 
 ---
@@ -417,6 +426,12 @@ git clone ssh://git@127.0.0.1:32222/git/repos/app.git /tmp/app
 
 ```bash
 kubectl create namespace jenkins
+```
+
+### Create a service account
+
+```bash
+kubectl apply -f /k8s/jenkins/sa.yaml
 ```
 
 ### Deploy Jenkins
@@ -439,7 +454,7 @@ kubectl exec -n jenkins $(kubectl get pods -n jenkins -l app=jenkins --no-header
 [http://192.168.33.100:32080](http://192.168.33.100:32080)
 
 1. Unlocking Jenkins
-1. Select plugins to install → `None`(Unselect all) → Install
+1. Install suggested plugins
 1. Create first admin user: `admin`
 1. Instance configuration
    - Jenkins URL: `http://192.168.33.100:32080/`
@@ -451,14 +466,207 @@ kubectl exec -n jenkins $(kubectl get pods -n jenkins -l app=jenkins --no-header
 How to install plugins:
 
 1. Go to [http://192.168.33.100:32080/pluginManager/available](http://192.168.33.100:32080/pluginManager/available).
-1. Search `kubernetes`.
-1. Install `Kubernetes` plugin and restart Jenkins.
+1. Search `kubernetes`, `git`, `pipeline`, `Shared workspace`.
+1. Install plugins and restart Jenkins.
+   - `Kubernetes`, `Kubernetes :: Pipeline :: DevOps Steps`
+   - `Git`
+   - `Pipeline`
+   - `Shared workspace`
 
-### Create a Pipeline
+### Shared Workspace
 
-### Commit
+1. [System Configuration](http://192.168.33.100:32080/configure)
+1. Workspace Sharing
+   1. Workspaces Name: `my_project`
+   1. URL: `ssh://git@192.168.33.100/~/repos/app.git`
+1. Save
+
+### Kubernetes Cloud configuration
+
+1. Jenkins: [Configure Clouds](http://192.168.33.100:32080/configureClouds/)
+1. Add a new cloud: kubernetes
+   - Kubernetes URL: `https://192.168.33.100:6443` or `https://kubernetes.default.svc.cluster.local`
+   - Kubernetes Namespace: `jenkins`
+   - Credentials
+     - Kind: `Kubernetes Service Account`
+   - Direct Connection: enabled
+   - Jenkins URL: `http://192.168.33.100:32080`
+   - Jenkins tunnel: `http://192.168.33.100:32081`
+1. [System Configuration](http://192.168.33.100:32080/configure) → Jenkins Location → URL: `http://192.168.33.100:32080`
+1. [Configure Global Security](http://192.168.33.100:32080/configureSecurity/) → Agents: TCP port for inbound agents	`32081`
+
+---
+
+## Create a Pipeline
+
+### Git Hook: post-receive
+
+```bash
+cat <<EOF | sudo -u git tee /home/git/repos/app.git/hooks/post-receive
+#!/bin/sh
+curl http://192.168.33.100:32080/git/notifyCommit?url=ssh://git@192.168.33.100/~/repos/app.git
+EOF
+sudo chmod 775 /home/git/repos/app.git/hooks/post-receive
+```
+
+### Creat a Folder
+
+1. [Create a job](http://192.168.33.100:32080/newJob)
+   1. Enter an item name: `My Pipelines`
+   1. Select `Folder`
+1. Save
+
+### Create a Job 1
+
+1. Go to `My Pipelines` → Creat a Job
+   1. Enter an item name: `Git Hook`
+   1. Select `Freestyle project`
+1. General → Shared Workspace: `my_project (ssh://git@192.168.33.100/~/repos/app.git)`
+1. Source Code Management: Git
+   - Repository URL: `ssh://git@192.168.33.100/~/repos/app.git`
+   - Credentials: make `git`
+     1. Add
+     1. Kind: `SSH Username with private key`
+     1. Username: `git`
+     1. Private Key: enter `id_ed25519`.
+1. Build Triggers: Poll SCM enabled (No polling schedule is required.)
+1. Save
+
+### Creat a Job 2
+
+1. Go to `My Pipelines` → Creat a Job
+   1. Enter an item name: `Build a image`
+   1. Select `Pipeline`
+1. Build Triggers → Build after other projects are built → `git hook`
+1. Add Pipeline and Save
+
+Script:
+
+```groovy
+pipeline {
+  agent {
+    kubernetes {
+      defaultContainer 'kaniko'
+      yaml """
+kind: Pod
+metadata:
+  name: kaniko
+spec:
+  containers:
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:latest
+    imagePullPolicy: Always
+    args: ["--dockerfile=/workspace/Dockerfile", "--destination=rurumimic/hellothere"]
+    tty: true
+    volumeMounts:
+      - name: jenkins-docker-cfg
+        mountPath: /kaniko/.docker
+      - name: dockerfile-storage
+        mountPath: /workspace
+  volumes:
+  - name: jenkins-docker-cfg
+    projected:
+      sources:
+      - secret:
+          name: regcred
+          items:
+            - key: .dockerconfigjson
+              path: config.json
+  - name: dockerfile-storage
+    hostPath:
+      path: /var/jenkins_home/sharedspace/my_project
+"""
+    }
+  }
+  stages {
+    stage('Build with Kaniko') {
+      steps {
+        sh 'ls -al /workspace'
+      }
+    }
+  }
+}
+```
+
+```groovy
+podTemplate(yaml: """
+kind: Pod
+spec:
+  containers:
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:latest
+    imagePullPolicy: Always
+    command:
+    - /busybox/cat
+    tty: true
+    volumeMounts:
+      - name: kaniko-secret
+        mountPath: /kaniko/.docker
+      - name: dockerfile-storage
+        mountPath: /workspace
+  volumes:
+  - name: kaniko-secret
+    secret:
+      secretNname: regcred
+      items:
+        - key: .dockerconfigjson
+          path: config.json
+  - name: dockerfile-storage
+    hostPath:
+      path: /var/jenkins_home/sharedspace/my_project
+"""
+  ) {
+
+  node(POD_LABEL) {
+    stage('Build with Kaniko') {
+      container('kaniko') {
+        sh '/kaniko/executor -f /workspace/Dockerfile -c /workspace --cache=true --destination=rurumimic/hellothere'
+      }
+    }
+  }
+}
+```
+
+---
+
+## Commit and Deploy
+
+### Create a secret for jenkins branch
+
+```bash
+kubectl create secret docker-registry regcred -n jenkins \
+--docker-server=https://index.docker.io/v1/ \ 
+--docker-username=<your-name> \
+--docker-password=<your-pword> \
+--docker-email=<your-email>
+```
+
+### Clone a repository
+
+```bash
+git clone ssh://git@192.168.33.100/~/repos/app.git /tmp/app
+```
+
+### Edit
+
+```bash
+cd /tmp/app
+sed -i 's/Hello/Hi/' app.js
+```
+
+### Commit and Push
+
+```bash
+git add .
+git commit -m "Update"
+git push
+```
 
 ### Test
+
+Go to Jenkins: [my-project](http://192.168.33.100:32080/job/my-project/)
+
+And your Docker Hub repository.
 
 ---
 

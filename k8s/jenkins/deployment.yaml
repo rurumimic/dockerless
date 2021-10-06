@@ -18,6 +18,7 @@ spec:
         image: jenkins/jenkins:lts-alpine
         ports:
         - containerPort: 8080
+        - containerPort: 50000
         volumeMounts:
           - name: jenkins-home
             mountPath: /var/jenkins_home
@@ -40,6 +41,11 @@ spec:
   selector:
     app: jenkins
   ports:
-    - port: 8080
+    - name: web
+      port: 8080
       targetPort: 8080
       nodePort: 32080
+    - name: jnlp
+      port: 50000
+      targetPort: 50000
+      nodePort: 32081
